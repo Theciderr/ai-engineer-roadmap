@@ -1,0 +1,12 @@
+node_modules
+.next
+data/*.db
+data/*.db-shm
+data/*.db-wal
+out
+data/mission-control.db
+data/mission-control.db-journal
+.env
+.env.local
+npm-debug.log*
+.DS_Store

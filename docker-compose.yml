@@ -1,0 +1,11 @@
+services:
+  mission-control:
+    build: .
+    ports:
+      - '3000:3000'
+    volumes:
+      - mission-control-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  mission-control-data:

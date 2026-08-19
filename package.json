@@ -1,0 +1,30 @@
+{
+  "name": "ai-engineer-mission-control",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A production tracker for a 16-week, 112-day AI Engineer job-readiness sprint - daily tasks, skills matrix, job pipeline, and market evidence, backed by a real API and database.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "seed": "tsx scripts/seed.ts",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "next": "14.2.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.9",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.39",
+    "tailwindcss": "^3.4.4",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
+  }
+}
