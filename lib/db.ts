@@ -7,8 +7,13 @@ declare global {
   var __missionControlReady: Promise<void> | undefined;
 }
 
+const databaseUrl =
+  process.env.DATABASE_URL ??
+  process.env.POSTGRES_URL ??
+  process.env.POSTGRES_URL_NON_POOLING;
+
 export const db = globalThis.__missionControlPool ?? new Pool({
-  connectionString: process.env.DATABASE_URL || undefined,
+  connectionString: databaseUrl,
   max: Number(process.env.DATABASE_POOL_MAX ?? 5),
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
@@ -17,8 +22,10 @@ export const db = globalThis.__missionControlPool ?? new Pool({
 globalThis.__missionControlPool = db;
 
 export async function ensureDatabase() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL is required. Add a PostgreSQL connection string to the environment.');
+  if (!databaseUrl) {
+    throw new Error(
+      'PostgreSQL connection string is missing. Set DATABASE_URL, POSTGRES_URL, or POSTGRES_URL_NON_POOLING in Vercel.',
+    );
   }
   if (!globalThis.__missionControlReady) {
     globalThis.__missionControlReady = migrate().then(seed);
