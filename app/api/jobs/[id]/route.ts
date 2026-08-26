@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db, Job } from '@/lib/db';
+import { query, Job } from '@/lib/db';
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   const id = Number(params.id);
@@ -8,16 +8,17 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   const body = await request.json().catch(() => ({}));
-  const existing = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as Job | undefined;
+  const existingResult = await query<Job>('SELECT * FROM jobs WHERE id = $1', [id]);
+  const existing = existingResult.rows[0];
   if (!existing) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
   }
 
   const merged = { ...existing, ...body };
-  db.prepare(
-    `UPDATE jobs SET company=?, role=?, url=?, date_applied=?, stage=?, matched_skills=?, missing_skills=?, notes=?
-     WHERE id=?`
-  ).run(
+  await query(
+    `UPDATE jobs SET company=$1, role=$2, url=$3, date_applied=$4, stage=$5, matched_skills=$6, missing_skills=$7, notes=$8
+     WHERE id=$9`,
+    [
     merged.company,
     merged.role,
     merged.url,
@@ -27,16 +28,17 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     merged.missing_skills,
     merged.notes,
     id
+    ],
   );
 
-  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as Job;
-  return NextResponse.json(job);
+  const job = await query<Job>('SELECT * FROM jobs WHERE id = $1', [id]);
+  return NextResponse.json(job.rows[0]);
 }
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   const id = Number(params.id);
-  const result = db.prepare('DELETE FROM jobs WHERE id = ?').run(id);
-  if (result.changes === 0) {
+  const result = await query('DELETE FROM jobs WHERE id = $1', [id]);
+  if (result.rowCount === 0) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
   }
   return NextResponse.json({ deleted: true });

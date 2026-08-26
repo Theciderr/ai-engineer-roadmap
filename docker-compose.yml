@@ -3,9 +3,6 @@ services:
     build: .
     ports:
       - '3000:3000'
-    volumes:
-      - mission-control-data:/app/data
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to a PostgreSQL connection string}
     restart: unless-stopped
-
-volumes:
-  mission-control-data:

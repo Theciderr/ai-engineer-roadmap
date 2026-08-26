@@ -1,38 +1,38 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import { Pool, QueryResultRow } from 'pg';
 import seedData from '../data/seed-data.json';
 
-const DB_PATH = path.join(process.cwd(), 'data', 'mission-control.db');
-
-// Ensure the data directory exists (important in fresh Docker volumes).
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-
-// A module-level singleton so we don't reopen the file on every request
-// (Next.js dev mode hot-reloads modules, so we stash it on globalThis too).
 declare global {
   // eslint-disable-next-line no-var
-  var __missionControlDb: Database.Database | undefined;
+  var __missionControlPool: Pool | undefined;
+  var __missionControlReady: Promise<void> | undefined;
 }
 
-function openDb(): Database.Database {
-  const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  return db;
+export const db = globalThis.__missionControlPool ?? new Pool({
+  connectionString: process.env.DATABASE_URL || undefined,
+  max: Number(process.env.DATABASE_POOL_MAX ?? 5),
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
+  ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
+});
+globalThis.__missionControlPool = db;
+
+export async function ensureDatabase() {
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is required. Add a PostgreSQL connection string to the environment.');
+  }
+  if (!globalThis.__missionControlReady) {
+    globalThis.__missionControlReady = migrate().then(seed);
+  }
+  await globalThis.__missionControlReady;
 }
 
-export const db = globalThis.__missionControlDb ?? openDb();
-if (process.env.NODE_ENV !== 'production') {
-  globalThis.__missionControlDb = db;
+export async function query<T extends QueryResultRow = QueryResultRow>(text: string, values: unknown[] = []) {
+  await ensureDatabase();
+  return db.query<T>(text, values);
 }
 
-function tableIsEmpty(table: string): boolean {
-  const row = db.prepare(`SELECT COUNT(*) as c FROM ${table}`).get() as { c: number };
-  return row.c === 0;
-}
-
-function migrate() {
-  db.exec(`
+async function migrate() {
+  await db.query(`
     CREATE TABLE IF NOT EXISTS tasks (
       id INTEGER PRIMARY KEY,
       day_number INTEGER NOT NULL,
@@ -51,7 +51,7 @@ function migrate() {
     );
 
     CREATE TABLE IF NOT EXISTS jobs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       company TEXT NOT NULL,
       role TEXT NOT NULL,
       url TEXT,
@@ -60,7 +60,7 @@ function migrate() {
       matched_skills TEXT,
       missing_skills TEXT,
       notes TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS skills (
@@ -84,17 +84,9 @@ function migrate() {
     );
   `);
 }
-
-function seed() {
-  const insertTask = db.prepare(`
-    INSERT INTO tasks (id, day_number, date, week, phase, ai_task, project_task, dsa_focus, cs_revision, applications_task, deliverable, is_review)
-    VALUES (@id, @day_number, @date, @week, @phase, @ai_task, @project_task, @dsa_focus, @cs_revision, @applications_task, @deliverable, @is_review)
-  `);
-
-  if (tableIsEmpty('tasks')) {
-    const insertMany = db.transaction((rows: any[]) => {
-      rows.forEach((row) => insertTask.run(row));
-    });
+  async function seed() {
+    const taskCount = await db.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM tasks');
+    if (taskCount.rows[0].count === '0') {
     const rows = (seedData.dailyTasks as any[]).map((t) => ({
       id: t['Day #'],
       day_number: t['Day #'],
@@ -109,15 +101,27 @@ function seed() {
       deliverable: t['Daily Deliverable'],
       is_review: t['AI Learning Task']?.startsWith('Weekly review') ? 1 : 0,
     }));
-    insertMany(rows);
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      for (const row of rows) {
+        await client.query(
+          `INSERT INTO tasks (id, day_number, date, week, phase, ai_task, project_task, dsa_focus, cs_revision, applications_task, deliverable, is_review)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [row.id, row.day_number, row.date, row.week, row.phase, row.ai_task, row.project_task, row.dsa_focus, row.cs_revision, row.applications_task, row.deliverable, row.is_review],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
-  if (tableIsEmpty('skills')) {
-    const insertSkill = db.prepare(`
-      INSERT INTO skills (id, category, skill, priority, proficiency, rationale, resource, status)
-      VALUES (@id, @category, @skill, @priority, @proficiency, @rationale, @resource, @status)
-    `);
-    const insertMany = db.transaction((rows: any[]) => rows.forEach((r) => insertSkill.run(r)));
+  const skillCount = await db.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM skills');
+  if (skillCount.rows[0].count === '0') {
     const rows = (seedData.skills as any[]).map((s, i) => ({
       id: i + 1,
       category: s['Category'] ?? s['Skill Category'] ?? Object.values(s)[0],
@@ -128,15 +132,17 @@ function seed() {
       resource: s['Resource'] ?? s['Learning Resource'] ?? null,
       status: s['Status'] ?? 'Not started',
     }));
-    insertMany(rows);
+    for (const row of rows) {
+      await db.query(
+        `INSERT INTO skills (id, category, skill, priority, proficiency, rationale, resource, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [row.id, row.category, row.skill, row.priority, row.proficiency, row.rationale, row.resource, row.status],
+      );
+    }
   }
 
-  if (tableIsEmpty('market_evidence')) {
-    const insertEv = db.prepare(`
-      INSERT INTO market_evidence (id, source, signal, plan_impact, freshness, link)
-      VALUES (@id, @source, @signal, @plan_impact, @freshness, @link)
-    `);
-    const insertMany = db.transaction((rows: any[]) => rows.forEach((r) => insertEv.run(r)));
+  const evidenceCount = await db.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM market_evidence');
+  if (evidenceCount.rows[0].count === '0') {
     const rows = (seedData.marketEvidence as any[]).map((e, i) => ({
       id: i + 1,
       source: e['Source'],
@@ -145,12 +151,15 @@ function seed() {
       freshness: e['Date / Freshness'],
       link: e['Link'],
     }));
-    insertMany(rows);
+    for (const row of rows) {
+      await db.query(
+        `INSERT INTO market_evidence (id, source, signal, plan_impact, freshness, link)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [row.id, row.source, row.signal, row.plan_impact, row.freshness, row.link],
+      );
+    }
   }
 }
-
-migrate();
-seed();
 
 export type Task = {
   id: number;

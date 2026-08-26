@@ -5,8 +5,8 @@ as an AI Engineer: a daily task checklist, a 16-week curriculum view, a skills
 matrix, a job-application pipeline, and the market research the plan is based
 on — all backed by a real database and API, not local-only state.
 
-**Stack:** Next.js 14 (App Router) · TypeScript · Tailwind CSS · SQLite
-(better-sqlite3) · Docker
+**Stack:** Next.js 14 (App Router) · TypeScript · Tailwind CSS · PostgreSQL
+(`pg`) · Docker
 
 ---
 
@@ -35,8 +35,8 @@ itself (FastAPI/Postgres-style service behind a UI).
 - **Market Evidence** — the sources and reasoning behind the plan's
   priorities, with links.
 
-All writes go through real API routes (`app/api/**`) into a SQLite database
-that's seeded once from `data/seed-data.json` on first run.
+All writes go through real API routes (`app/api/**`) into a PostgreSQL database
+that's migrated and seeded from `data/seed-data.json` on first request.
 
 ## Getting started locally
 
@@ -45,9 +45,15 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. The database (`data/mission-control.db`) is
-created and seeded automatically on first request — no separate seed step
-needed.
+Set `DATABASE_URL` to a PostgreSQL connection string, then open
+http://localhost:3000. The schema is created and seeded automatically on the
+first database request — no separate seed step is needed.
+
+Example local environment variable:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mission_control
+```
 
 ## Running with Docker (recommended for a real deployment)
 
@@ -55,30 +61,13 @@ needed.
 docker compose up --build
 ```
 
-This builds the app and runs it on port 3000, with the SQLite file stored in
-a named Docker volume (`mission-control-data`) so your progress survives
-container restarts and rebuilds.
+This builds the app and runs it on port 3000. Set `DATABASE_URL` in the
+environment used by the container; PostgreSQL owns persistence separately.
 
-To deploy on a host like Railway, Fly.io, or Render: point them at this
-`Dockerfile` and attach a persistent volume mounted at `/app/data`. Plain
-Docker-friendly hosts are the easiest fit because they give you a real,
-always-on filesystem — which SQLite needs.
-
-### A note on Vercel
-
-Vercel's serverless functions have an ephemeral, read-only filesystem, so
-SQLite (as configured here) will not persist between requests there. Two
-options if you want to deploy to Vercel specifically:
-
-1. Swap `lib/db.ts` for a hosted Postgres provider (e.g. Neon, Supabase, or
-   Vercel Postgres) — the SQL in this project is simple enough that porting
-   it is mostly a matter of swapping the `better-sqlite3` client for a
-   Postgres client (`pg` or `@vercel/postgres`) and adjusting a handful of
-   `?`-placeholder queries to `$1`-style ones.
-2. Use a hosted SQLite service like Turso, which is API-compatible with this
-   setup with minimal changes.
-
-The Docker path above needs no code changes.
+To deploy on Vercel, add `DATABASE_URL` as a production environment variable
+using a hosted PostgreSQL provider such as Neon, Supabase, or Vercel
+Postgres, then deploy normally. The pooled client uses SSL by default; set
+`DATABASE_SSL=false` only for a trusted non-SSL local database.
 
 ## Project structure
 
@@ -101,7 +90,7 @@ app/
 components/
   Sidebar.tsx, WeekRail.tsx
 lib/
-  db.ts                  SQLite connection, schema, one-time seeding
+  db.ts                  PostgreSQL pool, schema, one-time seeding
 data/
   seed-data.json          Source data (exported from the original study-plan spreadsheet)
 ```
@@ -110,7 +99,8 @@ data/
 
 If you revise the underlying study plan, re-export it to
 `data/seed-data.json` in the same shape (see `lib/db.ts` for the expected
-fields) and delete `data/mission-control.db` — it will reseed on next start.
+fields). Existing rows are preserved; use a new database or clear the
+reference tables before reseeding.
 
 ## Known issues / before you rely on this in production
 
@@ -123,18 +113,17 @@ fields) and delete `data/mission-control.db` — it will reseed on next start.
   somewhere public, put it behind basic auth or a login before sharing the
   URL, since the API routes currently accept writes from anyone who can
   reach them.
-- **SQLite is single-writer:** fine for one person tracking their own sprint;
-  don't reach for this pattern if you expect concurrent multi-user writes at
-  scale — that's exactly the Postgres/Redis lesson in Week 12 of the plan.
+- **Database provisioning:** the PostgreSQL database must be reachable from
+  the deployment and `DATABASE_URL` must be configured before requests arrive.
 
 ## Using this for your resume
 
 This project doubles as a portfolio piece: it's a full-stack TypeScript app
-(Next.js API routes + SQLite + Docker) you designed, built, and deployed
+(Next.js API routes + PostgreSQL + Docker) you designed, built, and deployed
 end-to-end. A reasonable resume line:
 
 > Built and deployed a full-stack progress-tracking app (Next.js, TypeScript,
-> SQLite, Docker) to plan and execute a 16-week technical upskilling program,
+> PostgreSQL, Docker) to plan and execute a 16-week technical upskilling program,
 > with a REST API, persistent state, and a live application-pipeline tracker.
 
 Deploy it, put the live URL and this repo on your resume/LinkedIn, and you

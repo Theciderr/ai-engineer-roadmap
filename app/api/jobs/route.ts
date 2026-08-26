@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { db, Job } from '@/lib/db';
+import { query, Job } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const jobs = db.prepare('SELECT * FROM jobs ORDER BY created_at DESC').all() as Job[];
-  return NextResponse.json(jobs);
+  const result = await query<Job>('SELECT * FROM jobs ORDER BY created_at DESC');
+  return NextResponse.json(result.rows);
 }
 
 export async function POST(request: Request) {
@@ -16,22 +16,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'company and role are required' }, { status: 400 });
   }
 
-  const result = db
-    .prepare(
-      `INSERT INTO jobs (company, role, url, date_applied, stage, matched_skills, missing_skills, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      company,
-      role,
-      url ?? null,
-      date_applied ?? null,
-      stage ?? 'Applied',
-      matched_skills ?? null,
-      missing_skills ?? null,
-      notes ?? null
-    );
-
-  const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(result.lastInsertRowid) as Job;
-  return NextResponse.json(job, { status: 201 });
+  const result = await query<Job>(
+    `INSERT INTO jobs (company, role, url, date_applied, stage, matched_skills, missing_skills, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING *`,
+    [company, role, url ?? null, date_applied ?? null, stage ?? 'Applied', matched_skills ?? null, missing_skills ?? null, notes ?? null],
+  );
+  return NextResponse.json(result.rows[0], { status: 201 });
 }

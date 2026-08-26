@@ -8,7 +8,7 @@ export default function SkillsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Skills come seeded into SQLite via lib/db.ts; reuse a tiny inline
+    // Skills come seeded into PostgreSQL via lib/db.ts; reuse a tiny inline
     // endpoint-free fetch by hitting a dedicated route would be cleaner,
     // but for a read-mostly reference table we keep it simple with fetch.
     fetch('/api/skills')

@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
-import { db, Task, Job } from '@/lib/db';
+import { query, Task, Job } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const tasks = db.prepare('SELECT * FROM tasks ORDER BY day_number ASC').all() as Task[];
-  const jobs = db.prepare('SELECT * FROM jobs').all() as Job[];
+  const [taskResult, jobResult] = await Promise.all([
+    query<Task>('SELECT * FROM tasks ORDER BY day_number ASC'),
+    query<Job>('SELECT * FROM jobs'),
+  ]);
+  const tasks = taskResult.rows;
+  const jobs = jobResult.rows;
 
   const totalDays = tasks.length;
   const completedDays = tasks.filter((t) => t.completed).length;
