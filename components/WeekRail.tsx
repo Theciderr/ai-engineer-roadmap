@@ -23,19 +23,24 @@ export default function WeekRail({ tasks }: Props) {
           return (
             <div key={i} className="flex-1 flex flex-col gap-1">
               <div className="flex gap-[3px] h-6">
-                {weekTasks.map((t) => (
-                  <div
-                    key={t.id}
-                    title={`Day ${t.day_number} — ${t.completed ? 'done' : 'pending'}`}
-                    className={`flex-1 rounded-[2px] transition-colors ${
-                      t.completed
-                        ? t.is_review
-                          ? 'bg-cyan'
-                          : 'bg-amber'
-                        : 'bg-rail'
-                    }`}
-                  />
-                ))}
+                {weekTasks.map((t) => {
+                  // Stagger animation by 50ms per day (day 1 = 0ms, day 2 = 50ms, etc.)
+                  const animationDelay = (t.day_number - 1) * 50;
+                  return (
+                    <div
+                      key={t.id}
+                      title={`Day ${t.day_number} — ${t.completed ? 'done' : 'pending'}`}
+                      className={`flex-1 rounded-[2px] transition-colors rail-dot ${
+                        t.completed
+                          ? t.is_review
+                            ? 'bg-cyan'
+                            : 'bg-amber'
+                          : 'bg-rail'
+                      }`}
+                      style={{ animationDelay: `${animationDelay}ms` }}
+                    />
+                  );
+                })}
               </div>
               <div
                 className={`text-center font-mono text-[10px] ${
